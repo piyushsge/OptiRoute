@@ -188,17 +188,36 @@ function App() {
   }, [theme]);
 
   React.useEffect(() => {
-    fetch('/locations.csv')
-      .then(res => res.text())
+    // Relative fetch based on Vite BASE_URL for subpath support (GitHub Pages)
+    const base = import.meta.env.BASE_URL;
+    const csvPath = (base.endsWith('/') ? base : base + '/') + 'locations.csv';
+    
+    fetch(csvPath)
+      .then(res => {
+        if (!res.ok) throw new Error('Network response was not ok');
+        return res.text();
+      })
       .then(text => {
+        // Validation: If it looks like HTML, don't parse it
+        if (text.trim().startsWith('<')) {
+           throw new Error('Received HTML instead of CSV');
+        }
+
         const rows = text.split('\n').filter(row => row.trim() !== '');
         const data = rows.slice(1).map(row => {
-          const [name, lat, lng] = row.split(',');
+          const parts = row.split(',');
+          if (parts.length < 3) return null;
+          const [name, lat, lng] = parts;
           return { name: name.trim(), lat: parseFloat(lat), lng: parseFloat(lng) };
-        });
+        }).filter(item => item !== null);
+        
         setLocationsData(data);
       })
-      .catch(err => console.error("Could not load locations.csv", err));
+      .catch(err => {
+        console.error("Could not load locations.csv", err);
+        // Fallback to empty to prevent UI crashes
+        setLocationsData([]);
+      });
   }, []);
 
   const handleSourceChange = (e) => {
@@ -278,7 +297,7 @@ function App() {
     }
     
     try {
-      const OSRM_BASE_URL = 'http://router.project-osrm.org/route/v1';
+      const OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1';
       let profile = 'driving';
       if (transportMode === 'cycle') profile = 'bike';
       if (transportMode === 'walk') profile = 'foot';
@@ -441,18 +460,18 @@ function App() {
               {currentView === 'signup' && (
                 <div className="auth-input-group">
                   <label htmlFor="auth-name">Full Name</label>
-                  <input id="auth-name" type="text" value={authName} onChange={(e) => setAuthName(e.target.value)} required placeholder="John Doe" autocomplete="name" />
+                  <input id="auth-name" type="text" value={authName} onChange={(e) => setAuthName(e.target.value)} required placeholder="John Doe" autoComplete="name" />
                 </div>
               )}
               
               <div className="auth-input-group">
                 <label htmlFor="auth-email">Email Address</label>
-                <input id="auth-email" type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required placeholder="john@example.com" autocomplete="email" />
+                <input id="auth-email" type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required placeholder="john@example.com" autoComplete="email" />
               </div>
               
               <div className="auth-input-group">
                 <label htmlFor="auth-password">Password</label>
-                <input id="auth-password" type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required placeholder="••••••••" autocomplete="current-password" />
+                <input id="auth-password" type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required placeholder="••••••••" autoComplete="current-password" />
               </div>
               
               <button type="submit" className="btn btn-primary w-full" style={{ marginTop: '1rem', padding: '1rem', borderRadius: '0.75rem' }}>
@@ -557,13 +576,13 @@ function App() {
           <div className="hero-content animate-fade-in">
             <h1 className="hero-title">Navigate Smarter. <span className="highlight-text">Avoid Traffic.</span></h1>
             <p className="hero-subtitle">
-              OptiRoute solves modern transit bottlenecks through interactive multi-modal logistics. Eliminate guesswork via accurate live geometry scaling, isometric 3D mapping, and personalized eco-calculators.
+              Optimize modern transit with intelligent multi-modal logistics. Eliminate guesswork using real-time data, precise route mapping, and personalized eco-efficient insights.
             </p>
             <button className="btn btn-primary btn-cta" onClick={() => {
               if (isAuthenticated) setCurrentView('map');
               else setCurrentView('login');
             }}>
-              Start Planning Now <Navigation size={20} />
+              Start Your Smart Journey <Navigation size={20} />
             </button>
           </div>
         </section>
@@ -704,7 +723,7 @@ function App() {
                   value={source}
                   onChange={handleSourceChange}
                   onFocus={() => { if (source.length > 0) setShowSourceDropdown(true) }}
-                  autocomplete="off"
+                  autoComplete="off"
                   required 
                 />
               </div>
@@ -733,7 +752,7 @@ function App() {
                   value={destination}
                   onChange={handleDestChange}
                   onFocus={() => { if (destination.length > 0) setShowDestDropdown(true) }}
-                  autocomplete="off"
+                  autoComplete="off"
                   required 
                 />
               </div>
