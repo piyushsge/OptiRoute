@@ -44,11 +44,9 @@ body {
   color: var(--text-main);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  cursor: url('/cursor.svg') 2 2, auto;
 }
 
 a, button, [role="button"] {
-  cursor: url('/cursor-hover.svg') 2 2, pointer !important;
 }
 
 input, textarea {
