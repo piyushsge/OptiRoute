@@ -216,6 +216,44 @@ function App() {
   const [supportMsg, setSupportMsg] = React.useState('');
   const [supportSent, setSupportSent] = React.useState(false);
 
+  // Share & Export States and Handlers
+  const [isRouteShared, setIsRouteShared] = React.useState(false);
+
+  const handleShareRoute = () => {
+    const encodedWps = waypoints.map(encodeURIComponent).join(',');
+    const origin = window.location.origin + window.location.pathname;
+    const shareUrl = `${origin}?category=${routeCategory}&waypoints=${encodedWps}`;
+    
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setIsRouteShared(true);
+      setTimeout(() => setIsRouteShared(false), 2000);
+    });
+  };
+
+  const handleExportItinerary = () => {
+    if (!routeResult || !routeResult.routes) return;
+    const activeRoute = routeResult.routes[activeRouteIndex];
+    
+    const exportData = {
+      platform: "OptiRoute",
+      transitMode: routeCategory,
+      departureTime: departureTime,
+      totalDistance: activeRoute.distance,
+      estimatedDuration: activeRoute.time,
+      trafficStatus: activeRoute.traffic,
+      stops: routeResult.resolvedLocs.map((l, i) => ({ stopIndex: i + 1, name: l.name, lat: l.lat, lng: l.lng })),
+      directions: activeRoute.steps ? activeRoute.steps.map(s => ({ step: s.instruction, distance: s.distance })) : []
+    };
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `optiroute-itinerary-${routeCategory}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
   // Sync profile forms with authenticated user
   React.useEffect(() => {
     if (currentUser) {
@@ -362,6 +400,28 @@ function App() {
       unsubscribeAuth();
       clearTimeout(loaderTimer);
     };
+  }, []);
+
+  // Handle shared deep-links on mount
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const waypointsParam = params.get('waypoints');
+    const categoryParam = params.get('category');
+    
+    if (waypointsParam) {
+      const wps = waypointsParam.split(',').map(decodeURIComponent);
+      setWaypoints(wps);
+      if (categoryParam) {
+        setRouteCategory(categoryParam);
+        setTransportMode(categoryParam === 'metro' || categoryParam === 'bus' ? 'bus' : categoryParam === 'walking' ? 'walk' : 'car');
+      }
+      setCurrentView('map');
+      
+      // Auto-search route after a brief timeout to let map container mount
+      setTimeout(() => {
+        handleRouteSearch(null, wps);
+      }, 800);
+    }
   }, []);
 
   // Demo Mode Logic
@@ -1344,16 +1404,6 @@ function App() {
             <span className="logo-text">OptiRoute</span>
           </div>
 
-          <nav className="nav-links hide-mobile">
-            {isAuthenticated && (
-              <span 
-                className={`nav-link-item ${currentView === 'profile' ? 'active' : ''}`}
-                onClick={() => { setProfileDropdownOpen(false); setCurrentView('profile'); }}
-              >
-                Profile Dashboard
-              </span>
-            )}
-          </nav>
 
           <div className="nav-actions">
             <button 
@@ -1387,13 +1437,6 @@ function App() {
                         <div className="user-tier-badge">Gold Tier Member</div>
                       </div>
                       <div className="dropdown-divider"></div>
-                      <button 
-                        className="dropdown-item" 
-                        type="button"
-                        onClick={() => { setProfileDropdownOpen(false); setCurrentView('profile'); }}
-                      >
-                        <User size={16} /> Profile Settings
-                      </button>
                       <button 
                         className="dropdown-item" 
                         type="button"
@@ -1496,273 +1539,6 @@ function App() {
     );
   }
 
-  if (currentView === 'profile') {
-    if (!isAuthenticated) {
-      setCurrentView('login');
-      return null;
-    }
-
-    const handleProfileSave = (e) => {
-      e.preventDefault();
-      setProfileSaveError('');
-      if (!profileName.trim()) { setProfileSaveError('Name cannot be empty.'); return; }
-      setProfileSaveSuccess(true);
-      setTimeout(() => setProfileSaveSuccess(false), 3000);
-    };
-
-    const handleCopyApiKey = () => {
-      navigator.clipboard.writeText(developerApiKey).then(() => {
-        setCopiedApiKey(true);
-        setTimeout(() => setCopiedApiKey(false), 2200);
-      });
-    };
-
-    const togglePref = (key) => {
-      setUserPreferences(prev => ({ ...prev, [key]: !prev[key] }));
-    };
-
-    const profileStats = [
-      { label: 'Routes Computed', value: searchHistory.length > 0 ? searchHistory.length * 7 + 142 : 142, icon: <Route size={20} />, color: 'var(--primary-color)', bg: 'rgba(99,102,241,0.1)' },
-      { label: 'Hours Saved', value: '38h', icon: <Clock size={20} />, color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
-      { label: 'CO₂ Reduced', value: '45kg', icon: <TrendingUp size={20} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-      { label: 'Member Since', value: '2025', icon: <CheckCircle size={20} />, color: '#a855f7', bg: 'rgba(168,85,247,0.1)' },
-    ];
-
-    const tabs = [
-      { id: 'account', label: 'Account Settings', icon: <User size={16} /> },
-      { id: 'preferences', label: 'Travel Preferences', icon: <Settings size={16} /> },
-      { id: 'developer', label: 'Developer Access', icon: <Key size={16} /> },
-    ];
-
-    return (
-      <div className="home-container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        {renderHeader()}
-
-        <div className="profile-dashboard-wrapper animate-fade-in">
-          {/* Hero banner */}
-          <div className="profile-hero-banner">
-            <div className="profile-avatar-ring">
-              {profileName ? profileName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
-            </div>
-            <div className="profile-hero-text">
-              <h1 className="profile-hero-name">{profileName || 'User'}</h1>
-              <p className="profile-hero-email">{profileEmail}</p>
-              <span className="user-tier-badge" style={{ fontSize: '0.75rem', padding: '4px 12px' }}>✦ Gold Tier Member</span>
-            </div>
-          </div>
-
-          {/* Stats row */}
-          <div className="profile-stats-row">
-            {profileStats.map((stat, i) => (
-              <div key={i} className="profile-stat-card">
-                <div className="pstat-icon" style={{ background: stat.bg, color: stat.color }}>{stat.icon}</div>
-                <div className="pstat-value" style={{ color: stat.color }}>{stat.value}</div>
-                <div className="pstat-label">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Tabs + Panel */}
-          <div className="profile-tab-layout">
-            {/* Sidebar tabs */}
-            <aside className="profile-tab-sidebar">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  className={`profile-tab-btn ${activeProfileTab === tab.id ? 'active' : ''}`}
-                  onClick={() => setActiveProfileTab(tab.id)}
-                  type="button"
-                >
-                  {tab.icon} {tab.label}
-                </button>
-              ))}
-              <div style={{ marginTop: 'auto', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
-                <button type="button" className="btn btn-outline w-full" style={{ justifyContent: 'center', marginBottom: '0.75rem' }} onClick={() => setCurrentView('mode_select')}>
-                  <MapIcon size={16} /> Open Planner
-                </button>
-                <button type="button" className="btn w-full" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--traffic-red)', justifyContent: 'center' }} onClick={handleLogout}>
-                  <LogOut size={16} /> Log Out
-                </button>
-              </div>
-            </aside>
-
-            {/* Main panel */}
-            <main className="profile-tab-panel">
-              {activeProfileTab === 'account' && (
-                <div className="profile-panel-content animate-fade-in">
-                  <h2 className="profile-section-title">Account Settings</h2>
-                  <p className="profile-section-subtitle">Update your personal information and password.</p>
-
-                  {profileSaveSuccess && (
-                    <div className="profile-success-banner">
-                      <CheckCircle size={18} /> Profile saved successfully!
-                    </div>
-                  )}
-                  {profileSaveError && (
-                    <div className="auth-error">{profileSaveError}</div>
-                  )}
-
-                  <form onSubmit={handleProfileSave} className="profile-settings-form">
-                    <div className="profile-form-group">
-                      <label htmlFor="prof-name">Full Name</label>
-                      <input
-                        id="prof-name"
-                        type="text"
-                        value={profileName}
-                        onChange={e => setProfileName(e.target.value)}
-                        placeholder="Your full name"
-                      />
-                    </div>
-                    <div className="profile-form-group">
-                      <label htmlFor="prof-email">Email Address</label>
-                      <input
-                        id="prof-email"
-                        type="email"
-                        value={profileEmail}
-                        onChange={e => setProfileEmail(e.target.value)}
-                        placeholder="your@email.com"
-                        disabled={currentUser?.email === 'guest@optiroute.local'}
-                      />
-                    </div>
-                    <div className="profile-form-group">
-                      <label htmlFor="prof-pw">New Password</label>
-                      <input
-                        id="prof-pw"
-                        type="password"
-                        value={profilePassword}
-                        onChange={e => setProfilePassword(e.target.value)}
-                        placeholder="Leave blank to keep current"
-                      />
-                    </div>
-                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', padding: '0.85rem 2rem', borderRadius: '0.75rem' }}>
-                      Save Changes
-                    </button>
-                  </form>
-
-                  {/* Danger Zone */}
-                  <div className="profile-danger-zone">
-                    <h3>Danger Zone</h3>
-                    <p>Once you delete your account, all your saved routes and data will be permanently removed.</p>
-                    <button type="button" className="btn" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--traffic-red)', border: '1px solid rgba(239,68,68,0.25)' }}>
-                      Delete Account
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {activeProfileTab === 'preferences' && (
-                <div className="profile-panel-content animate-fade-in">
-                  <h2 className="profile-section-title">Travel Preferences</h2>
-                  <p className="profile-section-subtitle">Customize your default routing and display settings.</p>
-
-                  <div className="pref-list">
-                    <div className="pref-item">
-                      <div className="pref-item-info">
-                        <span className="pref-item-label">Distance Units</span>
-                        <span className="pref-item-desc">Display distances in kilometres (metric) or miles (imperial)</span>
-                      </div>
-                      <button type="button" className={`pref-toggle-btn ${userPreferences.useMetric ? 'on' : ''}`} onClick={() => togglePref('useMetric')}>
-                        <span className="pref-toggle-knob"></span>
-                        <span className="pref-toggle-label">{userPreferences.useMetric ? 'km' : 'mi'}</span>
-                      </button>
-                    </div>
-
-                    <div className="pref-item">
-                      <div className="pref-item-info">
-                        <span className="pref-item-label">Push Notifications</span>
-                        <span className="pref-item-desc">Receive route alerts, schedule delays, and traffic updates</span>
-                      </div>
-                      <button type="button" className={`pref-toggle-btn ${userPreferences.notifications ? 'on' : ''}`} onClick={() => togglePref('notifications')}>
-                        <span className="pref-toggle-knob"></span>
-                      </button>
-                    </div>
-
-                    <div className="pref-item">
-                      <div className="pref-item-info">
-                        <span className="pref-item-label">Default Transport Mode</span>
-                        <span className="pref-item-desc">Pre-select your preferred routing category when launching the planner</span>
-                      </div>
-                      <select
-                        className="pref-select"
-                        value={userPreferences.defaultMode}
-                        onChange={e => setUserPreferences(prev => ({ ...prev, defaultMode: e.target.value }))}
-                      >
-                        <option value="driving">🚗 Smart Driving</option>
-                        <option value="metro">🚇 Metro Transit</option>
-                        <option value="bus">🚌 Bus Network</option>
-                        <option value="airline">✈️ Aviation</option>
-                        <option value="walking">🚶 Walking</option>
-                      </select>
-                    </div>
-
-                    <div className="pref-item">
-                      <div className="pref-item-info">
-                        <span className="pref-item-label">Default Map Style</span>
-                        <span className="pref-item-desc">Choose between street map and satellite imagery as your base layer</span>
-                      </div>
-                      <select
-                        className="pref-select"
-                        value={userPreferences.mapStyle}
-                        onChange={e => setUserPreferences(prev => ({ ...prev, mapStyle: e.target.value }))}
-                      >
-                        <option value="streets">🗺 Street Map</option>
-                        <option value="satellite">🛰 Satellite</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeProfileTab === 'developer' && (
-                <div className="profile-panel-content animate-fade-in">
-                  <h2 className="profile-section-title">Developer Access</h2>
-                  <p className="profile-section-subtitle">Manage your API keys and integrate OptiRoute into your applications.</p>
-
-                  <div className="dev-key-card">
-                    <div className="dev-key-header">
-                      <div>
-                        <div className="dev-key-name">Live API Key</div>
-                        <div className="dev-key-tier">Gold Tier · 10,000 req/day</div>
-                      </div>
-                      <span className="dev-key-status">Active</span>
-                    </div>
-                    <div className="dev-key-value-row">
-                      <code className="dev-key-value">{developerApiKey}</code>
-                      <button type="button" className="btn btn-outline dev-copy-btn" onClick={handleCopyApiKey}>
-                        {copiedApiKey ? <><CheckCircle size={14} /> Copied!</> : 'Copy Key'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="dev-snippet-card">
-                    <div className="dev-snippet-label">Quick Integration · cURL</div>
-                    <pre className="dev-snippet-code">{`curl -X GET "https://api.optiroute.dev/v1/route" \\
-  -H "Authorization: Bearer ${developerApiKey}" \\
-  -d '{"from":"Pari Chowk","to":"Connaught Place"}'`}</pre>
-                  </div>
-
-                  <div className="dev-stats-row">
-                    <div className="dev-stat-box">
-                      <div className="dev-stat-val">10,000</div>
-                      <div className="dev-stat-lbl">Daily Limit</div>
-                    </div>
-                    <div className="dev-stat-box">
-                      <div className="dev-stat-val" style={{ color: '#10b981' }}>9,872</div>
-                      <div className="dev-stat-lbl">Remaining Today</div>
-                    </div>
-                    <div className="dev-stat-box">
-                      <div className="dev-stat-val" style={{ color: '#f59e0b' }}>128</div>
-                      <div className="dev-stat-lbl">Used Today</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </main>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (currentView === 'mode_select') {
     const handleSelectMode = (modeType) => {
@@ -1795,7 +1571,19 @@ function App() {
         {renderHeader()}
 
         <div className="mode-select-content animate-fade-in" style={{ padding: '3rem 2rem', maxWidth: '1000px', margin: '0 auto', width: '100%', textAlign: 'center' }}>
-          <h1 className="mode-select-title" style={{ fontFamily: 'Outfit', fontSize: '2.5rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--secondary-color)' }}>Select Transit Network</h1>
+          
+          <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '1.5rem' }}>
+            <button 
+              type="button" 
+              className="btn btn-outline" 
+              onClick={() => setCurrentView('home')} 
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1.2rem', borderRadius: '2rem', fontSize: '0.9rem', fontWeight: 600 }}
+            >
+              <ArrowLeft size={16} /> Back to Home
+            </button>
+          </div>
+
+          <h1 className="mode-select-title" style={{ fontFamily: 'Outfit', fontSize: '2.5rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--secondary-color)', textAlign: 'center' }}>Select Transit Network</h1>
           <p className="mode-select-subtitle" style={{ color: 'var(--text-muted)', marginBottom: '3rem', fontSize: '1.05rem', maxWidth: '600px', margin: '0 auto 3rem' }}>
             Choose a network system to optimize. The interface, autocomplete predictions, and mapping coordinates will adjust dynamically to your selection.
           </p>
@@ -2266,15 +2054,6 @@ function App() {
       
       {/* Floating Header Actions (Top Right) */}
       <div className="map-controls-top-right">
-        {isAuthenticated && (
-          <button 
-            className="map-action-btn glass-panel"
-            onClick={() => setCurrentView('profile')}
-            title="Profile Settings"
-          >
-            <Settings size={20} />
-          </button>
-        )}
         <button 
           className="map-action-btn glass-panel"
           onClick={() => setMapView(mapView === 'streets' ? 'satellite' : 'streets')}
@@ -2333,7 +2112,6 @@ function App() {
           {isAuthenticated && (
             <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Driver: <strong>{currentUser?.name}</strong></span>
-              <span onClick={() => setCurrentView('profile')} style={{ color: 'var(--primary-color)', cursor: 'pointer', fontWeight: 500, padding: '4px', background: 'var(--bg-main)', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Settings size={14}/> Settings</span>
             </div>
           )}
         </div>
@@ -2779,6 +2557,26 @@ function App() {
                     <span>Destination Weather: <strong>{weatherData.temperature}°C</strong></span>
                   </div>
                 )}
+
+                {/* Share & Export Actions */}
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline" 
+                    style={{ flex: 1, padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderRadius: '0.5rem' }}
+                    onClick={handleShareRoute}
+                  >
+                    <Send size={14} /> {isRouteShared ? 'Copied Link!' : 'Share Route'}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline" 
+                    style={{ flex: 1, padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderRadius: '0.5rem' }}
+                    onClick={handleExportItinerary}
+                  >
+                    <Layers size={14} /> Export JSON
+                  </button>
+                </div>
               </div>
               
               <div className="route-breakdown">
