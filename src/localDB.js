@@ -194,3 +194,13 @@ export function onSnapshot(docRef, callback) {
     }
   };
 }
+
+// Google Analytics event tracking helper
+export function trackEvent(action, category, label = null, value = null) {
+  if (typeof window !== 'undefined' && window.gtag) {
+    const params = { event_category: category };
+    if (label !== null) params.event_label = label;
+    if (value !== null) params.value = value;
+    window.gtag('event', action, params);
+  }
+}
