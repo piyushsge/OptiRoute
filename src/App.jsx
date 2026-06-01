@@ -5,21 +5,20 @@ import 'leaflet/dist/leaflet.css';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import L from 'leaflet';
 import polyline from 'polyline';
-import { auth, db } from './firebase';
 import { 
+  auth, 
+  db, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
+  onAuthStateChanged,
   doc, 
   setDoc, 
   getDoc, 
   updateDoc, 
   arrayUnion, 
   onSnapshot 
-} from 'firebase/firestore';
+} from './localDB';
 import './App.css';
 
 // Fix Leaflet default icon issue
